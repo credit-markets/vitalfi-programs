@@ -1,5 +1,8 @@
+//! Events emitted by vault instructions for off-chain indexing.
+
 use anchor_lang::prelude::*;
 
+/// Emitted when a new vault is created
 #[event]
 pub struct VaultCreated {
     pub vault: Pubkey,

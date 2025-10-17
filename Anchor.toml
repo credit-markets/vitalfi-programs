@@ -18,7 +18,7 @@ vitalfi_vault = "146hbPFqGb9a3v3t1BtkmftNeSNqXzoydzVPk95YtJNj"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

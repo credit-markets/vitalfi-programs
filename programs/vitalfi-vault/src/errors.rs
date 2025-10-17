@@ -1,3 +1,5 @@
+//! Custom error codes for the vault program.
+
 use anchor_lang::prelude::*;
 
 #[error_code]
@@ -55,4 +57,10 @@ pub enum VaultError {
 
     #[msg("Total deposited cannot be zero")]
     ZeroTotalDeposited,
+
+    #[msg("Vault capacity must be greater than zero")]
+    InvalidCapacity,
+
+    #[msg("Minimum deposit must be greater than zero and less than or equal to cap")]
+    InvalidMinDeposit,
 }

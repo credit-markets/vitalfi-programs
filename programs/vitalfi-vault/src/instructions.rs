@@ -1,5 +1,9 @@
+//! # VitalFi Vault Program Instructions
+//!
+//! This module contains all instruction handlers for the multi-vault crowdfunding system.
+
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::*;
 use crate::events::*;
@@ -9,9 +13,20 @@ use crate::state::*;
 // Initialize Vault Instruction
 // ============================================
 
+/// Accounts required for vault initialization.
+///
+/// # Security Considerations
+/// - Vault PDA ensures unique vault per authority+vault_id combination
+/// - Vault token account PDA ensures vault has exclusive control over funds
+/// - Authority pays for account creation (payer)
 #[derive(Accounts)]
 #[instruction(vault_id: u64)]
 pub struct InitializeVault<'info> {
+    /// Vault PDA account to be initialized.
+    ///
+    /// **Seeds:** `["vault", authority, vault_id]`
+    ///
+    /// This PDA pattern allows one authority to create multiple vaults with unique IDs.
     #[account(
         init,
         payer = authority,
@@ -21,6 +36,13 @@ pub struct InitializeVault<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    /// Token account owned by the vault PDA to hold user deposits.
+    ///
+    /// **Seeds:** `["vault_token", vault]`
+    /// **Authority:** The vault PDA itself
+    ///
+    /// Only the vault PDA can sign for transfers from this account,
+    /// preventing unauthorized withdrawals.
     #[account(
         init,
         payer = authority,
@@ -31,8 +53,10 @@ pub struct InitializeVault<'info> {
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
+    /// SPL token mint that this vault will accept (e.g., USDC, wSOL).
     pub asset_mint: Account<'info, Mint>,
 
+    /// Vault creator and operator. Must sign and pay for account creation.
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -41,6 +65,10 @@ pub struct InitializeVault<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+/// Initializes a new vault with funding parameters.
+///
+/// Validates: cap > 0, min_deposit > 0, min_deposit <= cap, now < funding_end < maturity.
+/// Creates vault in Funding status with PDA-owned token account.
 pub fn initialize_vault(
     ctx: Context<InitializeVault>,
     vault_id: u64,
@@ -53,15 +81,17 @@ pub fn initialize_vault(
     let clock = Clock::get()?;
     let vault = &mut ctx.accounts.vault;
 
-    // Validate timestamps
+    // Validate parameters to prevent misconfiguration
+    require!(cap > 0, VaultError::InvalidCapacity);
+    require!(min_deposit > 0, VaultError::InvalidMinDeposit);
+    require!(min_deposit <= cap, VaultError::InvalidMinDeposit);
+
+    // Validate timestamp ordering: now < funding_end < maturity
     require!(
         funding_end_ts > clock.unix_timestamp,
         VaultError::InvalidTimestamps
     );
-    require!(
-        maturity_ts > funding_end_ts,
-        VaultError::InvalidTimestamps
-    );
+    require!(maturity_ts > funding_end_ts, VaultError::InvalidTimestamps);
 
     // Initialize vault
     vault.version = 1;
@@ -100,8 +130,10 @@ pub fn initialize_vault(
 // Deposit Instruction
 // ============================================
 
+/// Accounts for user deposit during funding phase.
 #[derive(Accounts)]
 pub struct Deposit<'info> {
+    /// Vault in Funding status.
     #[account(
         mut,
         seeds = [b"vault", vault.authority.as_ref(), vault.vault_id.to_le_bytes().as_ref()],
@@ -114,6 +146,7 @@ pub struct Deposit<'info> {
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
         bump,
+        constraint = vault_token_account.owner == vault.key() @ VaultError::UnauthorizedAuthority
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
@@ -140,6 +173,10 @@ pub struct Deposit<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// Deposits tokens into a vault during funding phase.
+///
+/// Validates: funding not ended, amount > 0, amount >= min_deposit, total <= cap.
+/// Creates or updates user position PDA.
 pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let position = &mut ctx.accounts.position;
@@ -201,8 +238,15 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 // Finalize Funding Instruction
 // ============================================
 
+/// Accounts required for finalizing the funding phase.
+///
+/// # Security Considerations
+/// - Only authority can finalize
+/// - Vault must be in Funding status
+/// - All token accounts are validated for correct ownership and mint
 #[derive(Accounts)]
 pub struct FinalizeFunding<'info> {
+    /// Vault in Funding status to be finalized.
     #[account(
         mut,
         seeds = [b"vault", vault.authority.as_ref(), vault.vault_id.to_le_bytes().as_ref()],
@@ -212,13 +256,16 @@ pub struct FinalizeFunding<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    /// Vault's token account holding user deposits.
     #[account(
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
         bump,
+        constraint = vault_token_account.owner == vault.key() @ VaultError::UnauthorizedAuthority
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
+    /// Authority's token account to receive funds if successful.
     #[account(
         mut,
         constraint = authority_token_account.mint == vault.asset_mint @ VaultError::InvalidMint,
@@ -226,12 +273,17 @@ pub struct FinalizeFunding<'info> {
     )]
     pub authority_token_account: Account<'info, TokenAccount>,
 
+    /// Vault authority.
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
 }
 
+/// Finalizes funding by checking 2/3 threshold: `total_deposited >= ceil(2/3 * cap)`.
+///
+/// Success (≥ 2/3): Transfers funds to authority, sets Active status.
+/// Failure (< 2/3): Sets Canceled status, users can claim refunds.
 pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let clock = Clock::get()?;
@@ -244,11 +296,11 @@ pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
 
     // Calculate 2/3 threshold using safe ceiling division
     // two_thirds = ceil(2/3 * cap) = (cap * 2 + 2) / 3
-    let two_thirds = ((vault.cap as u128)
+    let numerator = (vault.cap as u128)
         .checked_mul(2)
-        .ok_or(VaultError::ArithmeticOverflow)?
-        .checked_add(2)
-        .ok_or(VaultError::ArithmeticOverflow)?)
+        .and_then(|n| n.checked_add(2))
+        .ok_or(VaultError::ArithmeticOverflow)?;
+    let two_thirds = numerator
         .checked_div(3)
         .ok_or(VaultError::ArithmeticOverflow)? as u64;
 
@@ -307,8 +359,17 @@ pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
 // Mature Vault Instruction
 // ============================================
 
+/// Accounts required for maturing a vault with returned funds.
+///
+/// # Security Considerations
+/// - **CRITICAL**: Authority must transfer funds via CPI to prove return
+/// - Vault must be in Active status
+/// - Authority must own the authority_token_account
+/// - Token account mint must match vault's asset_mint
+/// - Vault token account ownership is validated
 #[derive(Accounts)]
 pub struct MatureVault<'info> {
+    /// Vault account to be matured (must be Active status).
     #[account(
         mut,
         seeds = [b"vault", vault.authority.as_ref(), vault.vault_id.to_le_bytes().as_ref()],
@@ -318,17 +379,41 @@ pub struct MatureVault<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    /// Vault's token account that will receive the returned funds.
+    ///
+    /// **Security**: Owner constraint prevents spoofed accounts.
     #[account(
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
         bump,
+        constraint = vault_token_account.owner == vault.key() @ VaultError::UnauthorizedAuthority
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
+    /// Authority's token account - funds are transferred FROM here.
+    ///
+    /// **Security**: This is where the returned funds + yield must come from.
+    /// The CPI transfer proves the authority is actually returning capital.
+    #[account(
+        mut,
+        constraint = authority_token_account.mint == vault.asset_mint @ VaultError::InvalidMint,
+        constraint = authority_token_account.owner == authority.key() @ VaultError::UnauthorizedAuthority
+    )]
+    pub authority_token_account: Account<'info, TokenAccount>,
+
+    /// Vault authority who must return the funds.
     pub authority: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
-pub fn mature_vault(ctx: Context<MatureVault>) -> Result<()> {
+/// Matures vault by accepting returned funds via CPI transfer.
+///
+/// **Security**: CPI transfer FROM authority TO vault proves funds were actually returned,
+/// preventing theft. Sets payout ratio: `payout = deposited * return_amount / total_deposited`.
+///
+/// Example: 700 deposited, 770 returned → user with 400 gets floor(400 * 770/700) = 440.
+pub fn mature_vault(ctx: Context<MatureVault>, return_amount: u64) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let clock = Clock::get()?;
 
@@ -338,21 +423,29 @@ pub fn mature_vault(ctx: Context<MatureVault>) -> Result<()> {
         VaultError::NotMatured
     );
 
-    require!(
-        vault.total_deposited > 0,
-        VaultError::ZeroTotalDeposited
+    require!(vault.total_deposited > 0, VaultError::ZeroTotalDeposited);
+
+    require!(return_amount > 0, VaultError::ZeroDeposit);
+
+    // Transfer funds from authority back to vault
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        token::Transfer {
+            from: ctx.accounts.authority_token_account.to_account_info(),
+            to: ctx.accounts.vault_token_account.to_account_info(),
+            authority: ctx.accounts.authority.to_account_info(),
+        },
     );
+    token::transfer(cpi_ctx, return_amount)?;
 
     // Calculate payout factor from returned amount
-    let returned = ctx.accounts.vault_token_account.amount;
-
-    vault.payout_num = returned as u128;
+    vault.payout_num = return_amount as u128;
     vault.payout_den = vault.total_deposited as u128;
     vault.status = VaultStatus::Matured;
 
     emit!(Matured {
         vault: vault.key(),
-        returned,
+        returned: return_amount,
         payout_num: vault.payout_num,
         payout_den: vault.payout_den,
     });
@@ -364,8 +457,10 @@ pub fn mature_vault(ctx: Context<MatureVault>) -> Result<()> {
 // Claim Instruction
 // ============================================
 
+/// Accounts for claiming refunds (Canceled) or payouts (Matured).
 #[derive(Accounts)]
 pub struct Claim<'info> {
+    /// Vault must be Canceled or Matured.
     #[account(
         mut,
         seeds = [b"vault", vault.authority.as_ref(), vault.vault_id.to_le_bytes().as_ref()],
@@ -378,6 +473,7 @@ pub struct Claim<'info> {
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
         bump,
+        constraint = vault_token_account.owner == vault.key() @ VaultError::UnauthorizedAuthority
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
@@ -403,6 +499,11 @@ pub struct Claim<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// Claims refund (if Canceled) or payout (if Matured).
+///
+/// Canceled: Returns full deposited amount.
+/// Matured: Returns floor(deposited * payout_num / payout_den).
+/// Supports partial claims - tracks claimed amount in position.
 pub fn claim(ctx: Context<Claim>) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let position = &mut ctx.accounts.position;
@@ -418,8 +519,8 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
         ((position.deposited as u128)
             .checked_mul(vault.payout_num)
             .ok_or(VaultError::ArithmeticOverflow)?)
-            .checked_div(vault.payout_den)
-            .ok_or(VaultError::ArithmeticOverflow)? as u64
+        .checked_div(vault.payout_den)
+        .ok_or(VaultError::ArithmeticOverflow)? as u64
     };
 
     let to_pay = entitled
@@ -473,8 +574,10 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
 // Close Vault Instruction
 // ============================================
 
+/// Accounts for closing an empty vault to reclaim rent.
 #[derive(Accounts)]
 pub struct CloseVault<'info> {
+    /// Vault to close (must be Canceled or Matured with no remaining funds).
     #[account(
         mut,
         seeds = [b"vault", vault.authority.as_ref(), vault.vault_id.to_le_bytes().as_ref()],
@@ -489,6 +592,7 @@ pub struct CloseVault<'info> {
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
         bump,
+        constraint = vault_token_account.owner == vault.key() @ VaultError::UnauthorizedAuthority
     )]
     pub vault_token_account: Account<'info, TokenAccount>,
 
@@ -496,6 +600,10 @@ pub struct CloseVault<'info> {
     pub authority: Signer<'info>,
 }
 
+/// Closes an empty vault and reclaims rent to authority.
+///
+/// Validates: vault token account balance == 0, vault in Canceled or Matured status.
+/// Rent from vault account is transferred to authority automatically via Anchor's `close` constraint.
 pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
     let vault = &ctx.accounts.vault;
 

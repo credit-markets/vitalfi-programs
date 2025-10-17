@@ -54,8 +54,8 @@ pub mod vitalfi_vault {
     }
 
     /// Mature the vault and calculate payout factor based on returned funds
-    pub fn mature_vault(ctx: Context<MatureVault>) -> Result<()> {
-        instructions::mature_vault(ctx)
+    pub fn mature_vault(ctx: Context<MatureVault>, return_amount: u64) -> Result<()> {
+        instructions::mature_vault(ctx, return_amount)
     }
 
     /// Claim refund (if canceled) or payout (if matured)

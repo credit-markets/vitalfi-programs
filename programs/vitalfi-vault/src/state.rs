@@ -1,29 +1,8 @@
+// State accounts for the multi-vault crowdfunding system.
+//
+// All accounts use PDAs for security and deterministic addressing.
+
 use anchor_lang::prelude::*;
-
-/// Global configuration for the vault program
-/// PDA seeds: ["config"]
-#[account]
-pub struct GlobalConfig {
-    /// Admin authority
-    pub admin: Pubkey,
-
-    /// Fee destination (unused for now, future use)
-    pub fee_dest: Pubkey,
-
-    /// Optional allowed mint (if None, any mint allowed)
-    pub allowed_mint: Option<Pubkey>,
-
-    /// Global pause flag
-    pub paused: bool,
-
-    /// PDA bump seed
-    pub bump: u8,
-}
-
-impl GlobalConfig {
-    /// 8 (discriminator) + 32 (admin) + 32 (fee_dest) + 1 + 32 (Option<Pubkey>) + 1 (paused) + 1 (bump)
-    pub const LEN: usize = 8 + 32 + 32 + 1 + 32 + 1 + 1;
-}
 
 /// Main vault account
 /// PDA seeds: ["vault", authority, vault_id (u64 LE bytes)]
