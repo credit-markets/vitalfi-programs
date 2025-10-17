@@ -103,7 +103,6 @@ pub fn initialize_vault(
 
     // Initialize vault
     vault.version = 1;
-    vault.feature_bits = 0;
     vault.authority = ctx.accounts.authority.key();
     vault.vault_id = vault_id;
     vault.asset_mint = ctx.accounts.asset_mint.key();

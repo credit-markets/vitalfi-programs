@@ -11,9 +11,6 @@ pub struct Vault {
     /// Version for future upgrades
     pub version: u16,
 
-    /// Feature flags for future use
-    pub feature_bits: u64,
-
     /// Vault authority (originator/operator)
     pub authority: Pubkey,
 
@@ -61,11 +58,11 @@ pub struct Vault {
 }
 
 impl Vault {
-    /// 8 (discriminator) + 2 (version) + 8 (feature_bits) + 32 (authority) + 8 (vault_id)
+    /// 8 (discriminator) + 2 (version) + 32 (authority) + 8 (vault_id)
     /// + 32 (asset_mint) + 32 (vault_token) + 8 (cap) + 4 (target_apy_bps)
     /// + 8 (funding_end_ts) + 8 (maturity_ts) + 8 (min_deposit) + 1 (status)
     /// + 8 (total_deposited) + 8 (total_claimed) + 16 (payout_num) + 16 (payout_den) + 1 (bump)
-    pub const LEN: usize = 8 + 2 + 8 + 32 + 8 + 32 + 32 + 8 + 4 + 8 + 8 + 8 + 1 + 8 + 8 + 16 + 16 + 1;
+    pub const LEN: usize = 8 + 2 + 32 + 8 + 32 + 32 + 8 + 4 + 8 + 8 + 8 + 1 + 8 + 8 + 16 + 16 + 1;
 }
 
 /// Vault status enum
