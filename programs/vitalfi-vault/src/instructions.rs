@@ -535,7 +535,6 @@ pub struct Claim<'info> {
 ///
 /// Canceled: Returns full deposited amount.
 /// Matured: Returns floor(deposited * payout_num / payout_den).
-/// Supports partial claims - tracks claimed amount in position.
 pub fn claim(ctx: Context<Claim>) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
     let position = &mut ctx.accounts.position;
@@ -548,11 +547,19 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
         // entitled = floor(deposited * payout_num / payout_den)
         require!(vault.payout_den > 0, VaultError::ZeroTotalDeposited);
 
-        ((position.deposited as u128)
+        let payout_u128 = ((position.deposited as u128)
             .checked_mul(vault.payout_num)
             .ok_or(VaultError::ArithmeticOverflow)?)
-        .checked_div(vault.payout_den)
-        .ok_or(VaultError::ArithmeticOverflow)? as u64
+            .checked_div(vault.payout_den)
+            .ok_or(VaultError::ArithmeticOverflow)?;
+
+        // Validate result fits in u64 to prevent silent truncation
+        require!(
+            payout_u128 <= u64::MAX as u128,
+            VaultError::ArithmeticOverflow
+        );
+
+        payout_u128 as u64
     };
 
     let to_pay = entitled
@@ -620,6 +627,7 @@ pub struct CloseVault<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    /// Vault's token account - must be closed to reclaim rent and prevent orphaned accounts.
     #[account(
         mut,
         seeds = [b"vault_token", vault.key().as_ref()],
@@ -630,6 +638,8 @@ pub struct CloseVault<'info> {
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 /// Closes an empty vault and reclaims rent to authority.
@@ -637,6 +647,7 @@ pub struct CloseVault<'info> {
 /// Validates: vault token account balance <= MAX_DUST_AMOUNT, vault in Canceled or Matured status.
 /// Allows for minor dust from rounding errors in payout calculations.
 /// Rent from vault account is transferred to authority automatically via Anchor's `close` constraint.
+/// Token account is closed via SPL Token CloseAccount instruction to reclaim rent.
 pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
     let vault = &ctx.accounts.vault;
 
@@ -645,6 +656,26 @@ pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
         ctx.accounts.vault_token_account.amount <= MAX_DUST_AMOUNT,
         VaultError::CannotCloseWithFunds
     );
+
+    // Close the token account to reclaim rent
+    let vault_id_bytes = vault.vault_id.to_le_bytes();
+    let authority_key = vault.authority.key();
+    let seeds = &[
+        b"vault".as_ref(),
+        authority_key.as_ref(),
+        vault_id_bytes.as_ref(),
+        &[vault.bump],
+    ];
+    let signer = &[&seeds[..]];
+
+    let cpi_accounts = token::CloseAccount {
+        account: ctx.accounts.vault_token_account.to_account_info(),
+        destination: ctx.accounts.authority.to_account_info(),
+        authority: vault.to_account_info(),
+    };
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+    token::close_account(cpi_ctx)?;
 
     emit!(VaultClosed {
         vault: vault.key(),
