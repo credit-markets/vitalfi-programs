@@ -1,28 +1,66 @@
+//! Custom error codes for the vault program.
+
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum CrowdfundError {
-    #[msg("Campaign deadline has passed")]
-    DeadlinePassed,
+pub enum VaultError {
+    #[msg("Invalid mint provided")]
+    InvalidMint,
 
-    #[msg("Campaign deadline has not been reached yet")]
-    DeadlineNotReached,
+    #[msg("Vault program is paused")]
+    VaultPaused,
 
-    #[msg("Campaign is not active")]
-    CampaignNotActive,
+    #[msg("Invalid vault status for this operation")]
+    InvalidStatus,
 
-    #[msg("Goal has not been met")]
-    GoalNotMet,
+    #[msg("Funding period has not ended yet")]
+    FundingNotEnded,
 
-    #[msg("Goal has been met, refunds not available")]
-    GoalMet,
+    #[msg("Funding period has ended")]
+    FundingEnded,
 
-    #[msg("Only campaign creator can perform this action")]
-    UnauthorizedCreator,
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
 
-    #[msg("Invalid deadline, must be in the future")]
-    InvalidDeadline,
+    #[msg("Deposit would exceed vault capacity")]
+    CapExceeded,
 
-    #[msg("Contribution amount must be greater than zero")]
-    ZeroContribution,
+    #[msg("Deposit amount below minimum")]
+    BelowMinDeposit,
+
+    #[msg("Vault has not matured yet")]
+    NotMatured,
+
+    #[msg("Vault is already matured")]
+    AlreadyMatured,
+
+    #[msg("Only vault authority can perform this action")]
+    UnauthorizedAuthority,
+
+    #[msg("Cannot close vault with remaining funds")]
+    CannotCloseWithFunds,
+
+    #[msg("Invalid timestamp configuration")]
+    InvalidTimestamps,
+
+    #[msg("Deposit amount must be greater than zero")]
+    ZeroDeposit,
+
+    #[msg("Arithmetic overflow")]
+    ArithmeticOverflow,
+
+    #[msg("No funds to claim")]
+    NothingToClaim,
+
+    #[msg("Funding threshold not met (< 2/3 cap)")]
+    FundingThresholdNotMet,
+
+    #[msg("Total deposited cannot be zero")]
+    ZeroTotalDeposited,
+
+    #[msg("Vault capacity must be greater than zero")]
+    InvalidCapacity,
+
+    #[msg("Minimum deposit must be greater than zero and less than or equal to cap")]
+    InvalidMinDeposit,
 }
