@@ -9,6 +9,13 @@ use crate::errors::*;
 use crate::events::*;
 use crate::state::*;
 
+/// Maximum vault capacity to prevent overflow in 2/3 threshold calculation.
+/// Set to u64::MAX / 3 to ensure (cap * 2 + 2) fits in u128.
+pub const MAX_VAULT_CAP: u64 = u64::MAX / 3;
+
+/// Maximum dust amount allowed in vault when closing (1000 smallest units = 0.000001 for 9 decimals).
+pub const MAX_DUST_AMOUNT: u64 = 1000;
+
 // ============================================
 // Initialize Vault Instruction
 // ============================================
@@ -83,6 +90,7 @@ pub fn initialize_vault(
 
     // Validate parameters to prevent misconfiguration
     require!(cap > 0, VaultError::InvalidCapacity);
+    require!(cap <= MAX_VAULT_CAP, VaultError::InvalidCapacity);
     require!(min_deposit > 0, VaultError::InvalidMinDeposit);
     require!(min_deposit <= cap, VaultError::InvalidMinDeposit);
 
@@ -300,9 +308,16 @@ pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
         .checked_mul(2)
         .and_then(|n| n.checked_add(2))
         .ok_or(VaultError::ArithmeticOverflow)?;
-    let two_thirds = numerator
+    let two_thirds_u128 = numerator
         .checked_div(3)
-        .ok_or(VaultError::ArithmeticOverflow)? as u64;
+        .ok_or(VaultError::ArithmeticOverflow)?;
+
+    // Validate cast to u64 won't truncate (should never happen with MAX_VAULT_CAP)
+    require!(
+        two_thirds_u128 <= u64::MAX as u128,
+        VaultError::ArithmeticOverflow
+    );
+    let two_thirds = two_thirds_u128 as u64;
 
     if vault.total_deposited < two_thirds {
         // Funding failed - mark as Canceled
@@ -314,10 +329,13 @@ pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
             total_deposited: vault.total_deposited,
         });
     } else {
-        // Funding successful - withdraw all funds to authority
+        // Funding successful
+        let vault_key = vault.key();
         let amount = ctx.accounts.vault_token_account.amount;
 
-        let vault_key = vault.key();
+        vault.status = VaultStatus::Active;
+
+        // Perform the transfer
         let vault_id_bytes = vault.vault_id.to_le_bytes();
         let authority_key = vault.authority.key();
         let seeds = &[
@@ -336,8 +354,6 @@ pub fn finalize_funding(ctx: Context<FinalizeFunding>) -> Result<()> {
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
         token::transfer(cpi_ctx, amount)?;
-
-        vault.status = VaultStatus::Active;
 
         emit!(AuthorityWithdraw {
             vault: vault_key,
@@ -427,6 +443,9 @@ pub fn mature_vault(ctx: Context<MatureVault>, return_amount: u64) -> Result<()>
 
     require!(return_amount > 0, VaultError::ZeroDeposit);
 
+    // Record balance before transfer for validation
+    let balance_before = ctx.accounts.vault_token_account.amount;
+
     // Transfer funds from authority back to vault
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
@@ -437,6 +456,19 @@ pub fn mature_vault(ctx: Context<MatureVault>, return_amount: u64) -> Result<()>
         },
     );
     token::transfer(cpi_ctx, return_amount)?;
+
+    // Reload account to verify actual transfer amount
+    ctx.accounts.vault_token_account.reload()?;
+    let balance_after = ctx.accounts.vault_token_account.amount;
+    let actual_transferred = balance_after
+        .checked_sub(balance_before)
+        .ok_or(VaultError::ArithmeticOverflow)?;
+
+    // Verify claimed amount matches actual transfer
+    require!(
+        actual_transferred == return_amount,
+        VaultError::InsufficientFunds
+    );
 
     // Calculate payout factor from returned amount
     vault.payout_num = return_amount as u128;
@@ -529,7 +561,18 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
 
     require!(to_pay > 0, VaultError::NothingToClaim);
 
-    // Transfer from vault to user
+    // Prevents reentrancy
+    position.claimed = position
+        .claimed
+        .checked_add(to_pay)
+        .ok_or(VaultError::ArithmeticOverflow)?;
+
+    vault.total_claimed = vault
+        .total_claimed
+        .checked_add(to_pay)
+        .ok_or(VaultError::ArithmeticOverflow)?;
+
+    // Perform transfer after state update
     let vault_key = vault.key();
     let vault_id_bytes = vault.vault_id.to_le_bytes();
     let authority_key = vault.authority.key();
@@ -549,17 +592,6 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
     token::transfer(cpi_ctx, to_pay)?;
-
-    // Update state
-    position.claimed = position
-        .claimed
-        .checked_add(to_pay)
-        .ok_or(VaultError::ArithmeticOverflow)?;
-
-    vault.total_claimed = vault
-        .total_claimed
-        .checked_add(to_pay)
-        .ok_or(VaultError::ArithmeticOverflow)?;
 
     emit!(ClaimEvent {
         vault: vault_key,
@@ -602,14 +634,15 @@ pub struct CloseVault<'info> {
 
 /// Closes an empty vault and reclaims rent to authority.
 ///
-/// Validates: vault token account balance == 0, vault in Canceled or Matured status.
+/// Validates: vault token account balance <= MAX_DUST_AMOUNT, vault in Canceled or Matured status.
+/// Allows for minor dust from rounding errors in payout calculations.
 /// Rent from vault account is transferred to authority automatically via Anchor's `close` constraint.
 pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
     let vault = &ctx.accounts.vault;
 
-    // Ensure vault token account is empty (or only dust remains)
+    // Ensure vault token account is empty or only has negligible dust
     require!(
-        ctx.accounts.vault_token_account.amount == 0,
+        ctx.accounts.vault_token_account.amount <= MAX_DUST_AMOUNT,
         VaultError::CannotCloseWithFunds
     );
 
