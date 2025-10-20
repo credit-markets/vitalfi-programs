@@ -1,6 +1,6 @@
 {
   "name": "@pollum-io/vitalfi-programs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "VitalFi Vault Solana Program SDK",
   "license": "ISC",
   "main": "target/types/vitalfi_vault.ts",
