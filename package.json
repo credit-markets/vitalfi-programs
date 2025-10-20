@@ -15,12 +15,14 @@
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "build": "anchor build"
   },
-  "dependencies": {
-    "@coral-xyz/anchor": "^0.31.1",
-    "@solana/spl-token": "^0.4.0",
+  "peerDependencies": {
+    "@coral-xyz/anchor": "^0.32.0",
     "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
@@ -29,9 +31,5 @@
     "prettier": "^2.6.2",
     "ts-mocha": "^10.0.0",
     "typescript": "^5.7.3"
-  },
-  "peerDependencies": {
-    "@coral-xyz/anchor": "^0.31.0",
-    "@solana/web3.js": "^1.95.0"
   }
 }
