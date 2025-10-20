@@ -1,0 +1,7 @@
+# Only publish IDL JSON
+# Everything else is ignored
+*
+!target/idl/vitalfi_vault.json
+!package.json
+!README.md
+!LICENSE

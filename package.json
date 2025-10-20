@@ -3,15 +3,12 @@
   "version": "0.1.1",
   "description": "VitalFi Vault Solana Program SDK",
   "license": "ISC",
-  "main": "target/types/vitalfi_vault.ts",
-  "types": "target/types/vitalfi_vault.ts",
+  "main": "target/idl/vitalfi_vault.json",
   "files": [
-    "target/types/vitalfi_vault.ts",
     "target/idl/vitalfi_vault.json"
   ],
   "exports": {
-    ".": "./target/types/vitalfi_vault.ts",
-    "./idl": "./target/idl/vitalfi_vault.json"
+    ".": "./target/idl/vitalfi_vault.json"
   },
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
