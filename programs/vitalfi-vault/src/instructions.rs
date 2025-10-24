@@ -648,13 +648,16 @@ pub struct CloseVault<'info> {
 /// Rent from vault account is transferred to authority automatically via Anchor's `close` constraint.
 /// Token account is closed via SPL Token CloseAccount instruction to reclaim rent.
 pub fn close_vault(ctx: Context<CloseVault>) -> Result<()> {
-    let vault = &ctx.accounts.vault;
+    let vault = &mut ctx.accounts.vault;
 
     // Ensure vault token account is empty or only has negligible dust
     require!(
         ctx.accounts.vault_token_account.amount <= MAX_DUST_AMOUNT,
         VaultError::CannotCloseWithFunds
     );
+
+    // Set status to Closed before closing the account
+    vault.status = VaultStatus::Closed;
 
     // Close the token account to reclaim rent
     let vault_id_bytes = vault.vault_id.to_le_bytes();
