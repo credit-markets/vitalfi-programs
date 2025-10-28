@@ -1,6 +1,10 @@
 # VitalFi Vault - Solana Program
 
-A Solana smart contract implementing a multi-vault crowdfunding system for financing medical receivables in Brazil.
+**Solana program for institutional-grade medical receivables financing**
+
+Built by Credit Markets | Part of the VitalFi ecosystem
+
+Multi-vault crowdfunding system enabling liquidity providers to earn yield backed by Brazilian healthcare receivables.
 
 ## 🏗️ Architecture
 
@@ -150,10 +154,25 @@ anchor deploy --provider.cluster mainnet
 
 Configured in `Anchor.toml` and `lib.rs`.
 
+## 📦 Published Package
+
+This program is published as an NPM package for easy integration:
+
+```bash
+npm install @pollum-io/vitalfi-programs
+```
+
+The package includes:
+- Generated IDL (Interface Definition Language)
+- TypeScript type definitions
+- Program ID and configuration
+
 ## 📄 License
 
 MIT
 
 ---
 
-**Built with 💜 for healthcare finance on Solana**
+**Powered by Credit Markets | Built on Solana**
+
+_Earn Yield. Empower Healthcare._
