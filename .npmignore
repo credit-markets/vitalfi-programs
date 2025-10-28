@@ -1,0 +1,8 @@
+# Only publish IDL, types, and essential files
+# Everything else is ignored
+*
+!target/idl/vitalfi_vault.json
+!target/types/vitalfi_vault.ts
+!package.json
+!README.md
+!LICENSE

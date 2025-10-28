@@ -1,15 +1,58 @@
 {
-  "license": "ISC",
+  "name": "@pollum-io/vitalfi-programs",
+  "version": "0.1.4",
+  "description": "VitalFi Vault Solana Program IDL and TypeScript types for on-chain medical receivables financing",
+  "license": "MIT",
+  "author": "VitalFi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/credit-markets/vitalfi-programs"
+  },
+  "homepage": "https://github.com/credit-markets/vitalfi-programs#readme",
+  "bugs": {
+    "url": "https://github.com/credit-markets/vitalfi-programs/issues"
+  },
+  "keywords": [
+    "solana",
+    "anchor",
+    "defi",
+    "vault",
+    "healthcare",
+    "receivables",
+    "idl",
+    "blockchain",
+    "finance"
+  ],
+  "main": "target/idl/vitalfi_vault.json",
+  "types": "target/types/vitalfi_vault.ts",
+  "files": [
+    "target/idl/vitalfi_vault.json",
+    "target/types/vitalfi_vault.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./target/types/vitalfi_vault.ts",
+      "default": "./target/idl/vitalfi_vault.json"
+    },
+    "./idl": "./target/idl/vitalfi_vault.json",
+    "./types": "./target/types/vitalfi_vault.ts"
+  },
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "build": "anchor build",
+    "prepublishOnly": "anchor build"
   },
-  "dependencies": {
-    "@coral-xyz/anchor": "^0.31.1",
-    "@solana/spl-token": "^0.4.0",
+  "peerDependencies": {
+    "@coral-xyz/anchor": "^0.32.0",
     "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
