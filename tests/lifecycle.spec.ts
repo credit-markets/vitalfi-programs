@@ -296,6 +296,7 @@ describe("Vault Lifecycle", () => {
           position: user1PositionPda,
           userTokenAccount: user1TokenAccount,
           user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user1])
@@ -321,6 +322,7 @@ describe("Vault Lifecycle", () => {
           position: user2PositionPda,
           userTokenAccount: user2TokenAccount,
           user: user2.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user2])
@@ -424,6 +426,7 @@ describe("Vault Lifecycle", () => {
           position: user1PositionPda,
           userTokenAccount: user1TokenAccount,
           user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user1])

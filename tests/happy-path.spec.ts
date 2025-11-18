@@ -178,6 +178,7 @@ describe("Vault Close Happy Path", () => {
         position: positionPda,
         userTokenAccount: user1TokenAccount,
         user: user1.publicKey,
+        systemProgram: SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .signers([user1])
@@ -301,6 +302,7 @@ describe("Vault Close Happy Path", () => {
         position: positionPda,
         userTokenAccount: user1TokenAccount,
         user: user1.publicKey,
+        systemProgram: SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .signers([user1])

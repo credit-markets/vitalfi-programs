@@ -513,7 +513,8 @@ pub struct Claim<'info> {
         seeds = [b"position", vault.key().as_ref(), user.key().as_ref()],
         bump = position.bump,
         has_one = vault,
-        constraint = position.owner == user.key()
+        constraint = position.owner == user.key(),
+        close = user
     )]
     pub position: Account<'info, Position>,
 
@@ -527,6 +528,7 @@ pub struct Claim<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -534,16 +536,22 @@ pub struct Claim<'info> {
 ///
 /// Canceled: Returns full deposited amount.
 /// Matured: Returns floor(deposited * payout_num / payout_den).
+///
+/// Position account is closed after claim, returning rent to user.
 pub fn claim(ctx: Context<Claim>) -> Result<()> {
     let vault = &mut ctx.accounts.vault;
-    let position = &mut ctx.accounts.position;
+    let position = &ctx.accounts.position;
 
-    let entitled = if vault.status == VaultStatus::Canceled {
-        // Refund full deposit
+    require!(
+        vault.status == VaultStatus::Canceled || vault.status == VaultStatus::Matured,
+        VaultError::InvalidStatus
+    );
+
+    require!(position.deposited > 0, VaultError::NothingToClaim);
+
+    let to_pay = if vault.status == VaultStatus::Canceled {
         position.deposited
     } else {
-        // Calculate payout based on payout factor
-        // entitled = floor(deposited * payout_num / payout_den)
         require!(vault.payout_den > 0, VaultError::ZeroTotalDeposited);
 
         let payout_u128 = ((position.deposited as u128)
@@ -552,7 +560,6 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
             .checked_div(vault.payout_den)
             .ok_or(VaultError::ArithmeticOverflow)?;
 
-        // Validate result fits in u64 to prevent silent truncation
         require!(
             payout_u128 <= u64::MAX as u128,
             VaultError::ArithmeticOverflow
@@ -561,24 +568,13 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
         payout_u128 as u64
     };
 
-    let to_pay = entitled
-        .checked_sub(position.claimed)
-        .ok_or(VaultError::NothingToClaim)?;
-
     require!(to_pay > 0, VaultError::NothingToClaim);
-
-    // Prevents reentrancy
-    position.claimed = position
-        .claimed
-        .checked_add(to_pay)
-        .ok_or(VaultError::ArithmeticOverflow)?;
 
     vault.total_claimed = vault
         .total_claimed
         .checked_add(to_pay)
         .ok_or(VaultError::ArithmeticOverflow)?;
 
-    // Perform transfer after state update
     let vault_key = vault.key();
     let vault_id_bytes = vault.vault_id.to_le_bytes();
     let authority_key = vault.authority.key();
