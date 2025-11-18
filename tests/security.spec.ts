@@ -288,6 +288,7 @@ describe("Security Tests", () => {
           position: testPosition,
           userTokenAccount: user1TokenAccount,
           user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user1])
@@ -336,8 +337,8 @@ describe("Security Tests", () => {
     });
   });
 
-  describe("Partial Claim Security", () => {
-    it("Prevents double claiming through state checks", async () => {
+  describe("Position Closure Security", () => {
+    it("Prevents double claiming by closing position account", async () => {
       const testVaultId = new BN(403);
       const testVaultPda = pda.vault(authority.publicKey, testVaultId);
       const testVaultToken = pda.vaultToken(testVaultPda);
@@ -416,6 +417,7 @@ describe("Security Tests", () => {
           position: testPosition,
           userTokenAccount: user1TokenAccount,
           user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user1])
@@ -429,7 +431,15 @@ describe("Security Tests", () => {
       // User deposited 700, gets 770
       assert.strictEqual(received.toString(), toU(770).toString());
 
-      // Try to claim again (should fail)
+      // Verify position account is closed
+      try {
+        await program.account.position.fetch(testPosition);
+        assert.fail("Position should be closed after claim");
+      } catch (err: any) {
+        expectErrorContains(err, "Account does not exist");
+      }
+
+      // Try to claim again (should fail because position doesn't exist)
       try {
         await program.methods
           .claim()
@@ -439,13 +449,19 @@ describe("Security Tests", () => {
             position: testPosition,
             userTokenAccount: user1TokenAccount,
             user: user1.publicKey,
+            systemProgram: SystemProgram.programId,
             tokenProgram: TOKEN_PROGRAM_ID,
           })
           .signers([user1])
           .rpc();
-        assert.fail("Should have failed - nothing more to claim");
+        assert.fail("Should have failed - position account closed");
       } catch (err: any) {
-        expectErrorContains(err, "NothingToClaim");
+        const errorStr = err.message || err.toString();
+        assert.isTrue(
+          errorStr.includes("Account does not exist") ||
+            errorStr.includes("AccountNotInitialized"),
+          `Expected account not found error, got: ${errorStr}`
+        );
       }
     });
   });

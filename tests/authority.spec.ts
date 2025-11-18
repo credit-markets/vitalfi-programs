@@ -319,6 +319,7 @@ describe("Authority Permission Tests", () => {
           position: positionPda,
           userTokenAccount: user1TokenAccount,
           user: user1.publicKey,
+          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([user1])

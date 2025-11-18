@@ -801,6 +801,7 @@ describe("Validation & Error Coverage", () => {
             position: position2,
             userTokenAccount: user2TokenAccount,
             user: user2.publicKey,
+            systemProgram: SystemProgram.programId,
             tokenProgram: TOKEN_PROGRAM_ID,
           })
           .signers([user2])
